@@ -1146,9 +1146,9 @@
         selectedIds.clear();
         for (let i = from; i <= to; i++) selectedIds.add(filtered[i].id);
       } else {
-        if (mode === 'full' || mode === 'preview') {
+        if (mode === 'full') {
           selectedIds.clear();
-          if (mode === 'full') selectedIds.add(id);
+          selectedIds.add(id);
         }
         anchorId = id;
       }
@@ -1169,8 +1169,7 @@
 
     // 上下キー用: リストのフォーカス（ハイライト）のみ。プレビュー・エディターは更新しない
     function focusItem(id) {
-      selectedIds.clear();
-      selectedIds.add(id);
+      // フォーカス移動時はチェック状態(selectedIds)を壊さない
       selectedId = id;
       anchorId = id;
       renderList();
