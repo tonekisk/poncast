@@ -558,14 +558,13 @@
       notify('再読み込みしました', 'success');
     }
 
-    // ===== サイネージモード =====
+    // ===== サイネージモード (MIX) =====
     function getSignageContents() {
-      // 選択されている場合: 選択されたもののうち「動画」のみ（要望: MIXモードで選択したもののうち動画ファイルのみを順に再生する）
-      if (selectedIds.size > 0) {
-        return contents.filter(c => selectedIds.has(c.id) && c.type === 'media' && c.data?.kind === 'video');
+      const filtered = getFilteredContents();
+      if (selectedIds.size > 1) {
+        return filtered.filter(c => selectedIds.has(c.id));
       }
-      // 選択されていない場合: テロップ系はスキップ、メディア系のみ（従来通り）
-      return contents.filter(c => !isTelopType(c));
+      return filtered;
     }
 
     function updateSignageBtn() {
@@ -575,9 +574,14 @@
         if (signageMode) {
           btn.textContent = '■ STOP MIX';
           btn.classList.add('active');
+          btn.style.background = 'var(--red)';
+          btn.style.color = '#fff';
         } else {
           btn.textContent = '▶▶ MIX';
           btn.classList.remove('active');
+          btn.style.background = '';
+          btn.style.color = '';
+          updateBulkBar();
         }
       }
       if (sts) {
@@ -592,27 +596,24 @@
       if (!list.length) { stopSignage(); return; }
       if (signageIndex >= list.length) signageIndex = 0;
       const c = list[signageIndex];
-      selectItem(c.id);
-      switchContent(c);
-      if (document.body.classList.contains('fs-open')) openFullscreen();
 
-      const isVideo = c.type === 'media' && c.data?.kind === 'video';
+      // 再生実行 (演出のためエディターの選択状態も同期)
+      selectItem(c.id, false, 'preview');
+      ponDashi();
+
+      const d = c.data || {};
+      const isVideo = c.type === 'media' && d.kind === 'video';
+
       if (isVideo) {
-        // 動画はVIDEO_ENDEDを待つ。安全のためフォールバックタイマーも設定
-        const dur = c.data?.videoDuration
-          ? Math.max(1, c.data.videoDuration - (c.data.startTime || 0)) * 1000 + 2000
+        // 動画は VIDEO_ENDED 通知を待つが、安全のため動画長+3秒で物理的にも次へ進むようにする
+        const dur = d.videoDuration
+          ? Math.max(1, (d.videoDuration - (d.startTime || 0))) * 1000 + 3000
           : 60000; // 不明なら最大60秒
-        signageTimer = setTimeout(() => {
-          signageIndex = (signageIndex + 1) % list.length;
-          playSignageItem();
-        }, dur);
+        signageTimer = setTimeout(signageNext, dur);
       } else {
-        // 静止画などはsigDurationタイマー
-        const dur = (c.data?.sigDuration ?? 5) * 1000;
-        signageTimer = setTimeout(() => {
-          signageIndex = (signageIndex + 1) % list.length;
-          playSignageItem();
-        }, dur);
+        // 静止画などは sigDuration タイマー
+        const dur = (d.sigDuration || 5) * 1000;
+        signageTimer = setTimeout(signageNext, dur);
       }
     }
 
@@ -620,7 +621,6 @@
       const list = getSignageContents();
       if (!list.length) { notify('再生できるコンテンツがありません', 'error'); return; }
       signageMode = true;
-      // 現在の選択位置から開始
       const curIdx = list.findIndex(c => c.id === selectedId);
       signageIndex = curIdx >= 0 ? curIdx : 0;
       updateSignageBtn();
@@ -653,43 +653,6 @@
       const list = getSignageContents();
       signageIndex = (signageIndex - 1 + list.length) % list.length;
       playSignageItem();
-    }
-    function getSignageContents() {
-      const filtered = getFilteredContents();
-      if (selectedIds.size > 1) {
-        return filtered.filter(c => selectedIds.has(c.id));
-      }
-      return filtered;
-    }
-
-    function playSignageItem() {
-      const list = getSignageContents();
-      if (!list.length) { stopSignage(); return; }
-      if (signageIndex >= list.length) signageIndex = 0;
-      const c = list[signageIndex];
-      selectItem(c.id, false, 'preview'); 
-      ponDashi();
-      
-      const d = c.data || {};
-      const dur = d.sigDuration || 5;
-      if (!(c.type === 'media' && d.kind === 'video')) {
-        signageTimer = setTimeout(signageNext, dur * 1000);
-      }
-    }
-
-    function updateSignageBtn() {
-      const btn = document.getElementById('signage-btn');
-      if (!btn) return;
-      if (signageMode) {
-        btn.textContent = '■ STOP MIX';
-        btn.style.background = 'var(--red)';
-        btn.style.color = '#fff';
-      } else {
-        btn.textContent = '▶▶ MIX';
-        btn.style.background = '';
-        btn.style.color = '';
-        updateBulkBar();
-      }
     }
 
     // ===== SCREEN（外部モニター表示）=====
@@ -2702,12 +2665,11 @@
           if (type === 'CLIENT_COUNT') {
             const el = document.getElementById('ws-count');
             if (el) {
-              // 自分を含めた合計台数を表示
               el.textContent = payload.count > 1 ? `(${payload.count} terminals)` : '';
-              if (payload.ip && payload.count > 1) {
-                console.log(`[WS] New client connected from: ${payload.ip}`);
-              }
             }
+          } else if (type === 'VIDEO_ENDED') {
+            // MIX モード中なら次へ進む
+            if (signageMode) signageNext();
           }
         } catch (err) { }
       };
