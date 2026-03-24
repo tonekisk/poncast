@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PonCast v0.5</title>
+  <link rel="stylesheet" href="css/poncast.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+  <!-- ===== ヘッダー ===== -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">PC</div>
+      <span class="logo-text">PonCast</span>
+    </div>
+    <div class="hdr-right">
+      <span id="ws-badge" data-i18n="status_standby"
+        style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(122,139,168,0.15);color:var(--txt3);font-weight:600;letter-spacing:0.06em">●
+        待機中</span>
+      <span id="ws-count" style="font-size:11px;color:var(--txt3);margin-left:4px;font-weight:600;"></span>
+      <button class="hdr-btn" onclick="openColorPanel()">SETTING</button>
+      <button class="hdr-btn" onclick="importJSON()">LOAD</button>
+      <button class="hdr-btn" onclick="saveAll()">SAVE</button>
+      <div class="screen-dropdown" id="screen-dropdown">
+        <button class="hdr-btn" onclick="toggleScreenMenu()">🖥 SCREEN</button>
+        <div class="screen-menu" id="screen-menu">
+          <div class="screen-menu-item" data-i18n="screen_this_window" onclick="openDisplay()">🖥 このウィンドウで開く</div>
+          <div class="screen-menu-item" id="screen-menu-secondary" data-i18n="screen_secondary"
+            onclick="openDisplayOnScreen(1)">⎇ セカンドモニターで全画面</div>
+          <div class="screen-menu-item" data-i18n="screen_primary_540" onclick="openDisplayPrimary(960,540)">☐ プライマリ
+            960×540</div>
+          <div class="screen-menu-item" data-i18n="screen_primary_720" onclick="openDisplayPrimary(1280,720)">☐ プライマリ
+            1280×720</div>
+          <div class="screen-menu-item" data-i18n="screen_primary_1080" onclick="openDisplayPrimary(1920,1080)">☐ プライマリ
+            1920×1080</div>
+        </div>
+      </div>
+      <div class="lang-toggle" style="margin-left:8px;">
+        <button class="lang-btn active" data-lang="ja" onclick="setLang('ja')">JP</button>
+        <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== COLORパネル ===== -->
+  <div class="color-panel-overlay" id="color-panel-overlay">
+    <div class="color-panel-backdrop" onclick="closeColorPanel()"></div>
+    <div class="color-panel">
+      <div class="cp-header">
+        <h3 data-i18n="editor_global_title">GLOBAL SETTINGS</h3>
+        <button class="cp-close" onclick="closeColorPanel()">✕</button>
+      </div>
+      <div class="cp-body" id="cp-body"></div>
+      <div class="cp-footer">
+        <button class="cp-reset" data-i18n="btn_reset" onclick="resetTheme()">リセット</button>
+        <button class="cp-apply" data-i18n="btn_apply_close" onclick="closeColorPanel()">適用して閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ワークスペース ===== -->
+  <div class="workspace">
+
+    <!-- ===== 左: プレビュー＆JSON ===== -->
+    <div class="panel-right">
+      <div class="right-tabs">
+        <div class="r-tab active" onclick="switchRTab('preview')">プレビュー</div>
+        <div class="r-tab" onclick="switchRTab('json')">JSON</div>
+        <div class="r-tab" onclick="switchRTab('all')">全データ</div>
+      </div>
+
+      <!-- プレビュー -->
+      <div class="r-pane active" id="pane-preview">
+        <!-- preview elements moved to editor-top-row -->
+      </div>
+
+      <!-- 個別JSON -->
+      <div class="r-pane" id="pane-json">
+        <div class="json-toolbar">
+          <button class="tb-btn" data-i18n="btn_copy" onclick="copyJSON()">コピー</button>
+          <button class="tb-btn" onclick="downloadOneJSON()">DL</button>
+        </div>
+        <div class="json-area">
+          <pre class="json-pre" id="json-pre">{}</pre>
+        </div>
+      </div>
+
+      <!-- 全データJSON -->
+      <div class="r-pane" id="pane-all">
+        <div class="json-toolbar">
+          <button class="tb-btn" data-i18n="btn_refresh" onclick="refreshAllJSON()">更新</button>
+          <button class="tb-btn" data-i18n="btn_apply" onclick="applyAllJSON()">適用</button>
+          <button class="tb-btn" data-i18n="btn_export" onclick="exportJSON()">エクスポート</button>
+        </div>
+        <div class="all-json-wrap">
+          <textarea id="all-json-text" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 中央: エディター ===== -->
+    <div class="panel-editor">
+      <!-- ミニプレビュー + IN/OUT -->
+      <div class="editor-top-row" id="editor-top-row">
+        <div class="preview-screen editor-mini-prev" id="prev-screen" onclick="openFullscreen()" style="cursor:pointer">
+          <!-- Layer 1: Media (Bg) -->
+          <div id="p-media-layer" style="position:absolute;inset:0">
+            <img id="p-img" src="" style="width:100%;height:100%;object-fit:contain;display:none">
+            <video id="p-vid" src="" muted loop style="width:100%;height:100%;object-fit:contain;display:none"></video>
+          </div>
+          <!-- Layer 2: Text (Fg) -->
+          <div id="p-text-layer" style="position:absolute;inset:0;pointer-events:none;z-index:5">
+            <div id="p-mini" style="position:absolute;inset:0;display:none"></div>
+          </div>
+          <div class="preview-label-abs">PREVIEW</div>
+          <div class="countdown-bar" id="countdown-bar">
+            <div class="cd-header">
+              <span class="cd-label" id="cd-label" data-i18n="label_remaining">残り時間</span>
+              <span class="cd-time" id="cd-time">0:00</span>
+            </div>
+            <div class="cd-track">
+              <div class="cd-fill" id="cd-fill"></div>
+            </div>
+          </div>
+        </div>
+        <div class="editor-inout">
+          <div class="e-field">
+            <label class="e-label" data-i18n="label_in">IN（秒 / 0=カット）</label>
+            <input class="e-input" type="number" id="d-enterDuration" min="0" max="10" step="0.05" value="0"
+              onchange="saveEditor()">
+            <label class="e-check-row">
+              <input type="checkbox" id="d-useCustomIn" onchange="saveEditor()">
+              <span data-i18n="lbl_enable">有効</span>
+            </label>
+          </div>
+          <div class="e-field">
+            <label class="e-label" data-i18n="label_out">OUT（秒 / 0=カット）</label>
+            <input class="e-input" type="number" id="d-exitDuration" min="0" max="10" step="0.05" value="0.5"
+              onchange="saveEditor()">
+            <label class="e-check-row">
+              <input type="checkbox" id="d-useCustomOut" onchange="saveEditor()">
+              <span data-i18n="lbl_enable">有効</span>
+            </label>
+          </div>
+          <div class="e-field" id="sig-dur-field" style="display:none">
+            <label class="e-label" data-i18n="label_sig_duration">サイネージ時間（秒）</label>
+            <input class="e-input" type="number" id="d-sigDuration" min="1" max="3600" value="5"
+              onchange="saveEditor()">
+          </div>
+        </div>
+      </div>
+      <div class="editor-toolbar" id="editor-toolbar">
+        <h3 id="editor-title" data-i18n="editor_empty_title">コンテンツを選択または新規作成</h3>
+      </div>
+      <div class="editor-body" id="editor-body">
+        <div class="empty-editor">
+          <div class="big-icon">✦</div>
+          <p data-i18n-html="editor_empty_msg">右のリストからコンテンツを選択するか、<br>動画・画像を右側のエリアにドラッグして登録してください</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 右: ポン出し＋コンテンツ一覧 ===== -->
+    <div class="panel-list" style="position:relative" ondragover="onListDragOver(event)"
+      ondragleave="onListDragLeave(event)" ondrop="onListDrop(event)">
+      <div class="scene-tab-bar" id="scene-tab-bar"></div>
+      <div class="drag-hint">
+        <div style="font-size:28px">🖼</div>
+        <div data-i18n="drag_hint_main">ここにドロップで一括登録</div>
+        <div style="font-size:11px;color:var(--txt2);font-weight:400" data-i18n="drag_hint_sub">画像・動画ファイルに対応</div>
+      </div>
+      <div class="pon-area">
+        <div class="pon-row">
+          <button class="pon-btn" id="pon-btn" disabled onclick="ponDashi()">▶ PLAY</button>
+          <button class="signage-btn" id="signage-btn" onclick="toggleSignage()">▶▶ MIX</button>
+        </div>
+        <div class="signage-status" id="signage-status">● CASTING MIX</div>
+      </div>
+      <div class="bulk-bar" id="bulk-bar">
+        <span class="bulk-cnt" id="bulk-cnt" data-i18n="bulk_zero_selected">0件選択中</span>
+        <button class="bulk-clr" data-i18n="btn_clear_select" onclick="clearMultiSelect()">✕ 解除</button>
+        <button class="bulk-del" data-i18n="btn_bulk_delete" onclick="askBulkDelete()">🗑 一括削除</button>
+      </div>
+      <span id="count-badge" style="display:none"></span>
+      <input type="text" id="search-input" style="display:none" oninput="renderList()">
+      <div class="cat-tabs" id="cat-tabs">
+        <span class="cat-tab active" data-cat="all" data-i18n="cat_all" onclick="filterCat('all')">すべて</span>
+        <span class="cat-tab" data-cat="media" data-i18n="cat_media" onclick="filterCat('media')">メディア</span>
+        <span class="cat-tab" data-cat="telop" data-i18n="cat_telop" onclick="filterCat('telop')">テロップ</span>
+        <span class="cat-tab" data-cat="break" data-i18n="cat_break" onclick="filterCat('break')">速報</span>
+        <span class="cat-tab" data-cat="scroll" data-i18n="cat_scroll" onclick="filterCat('scroll')">スクロール</span>
+      </div>
+      <div class="content-list" id="content-list"></div>
+    </div>
+
+  </div>
+
+  <!-- ===== 新規作成モーダル ===== -->
+  <div class="modal-overlay" id="new-modal">
+    <div class="modal">
+      <h3 data-i18n="modal_new_title">コンテンツタイプを選択</h3>
+      <div class="type-grid">
+        <div class="type-card selected" data-type="telop" onclick="selectType('telop')">
+          <div class="tc-icon">📺</div>
+          <div class="tc-name" data-i18n="type_telop_name">テロップ</div>
+          <div class="tc-desc" data-i18n="type_telop_desc">名前・肩書きの下部帯</div>
+        </div>
+        <div class="type-card" data-type="scroll" onclick="selectType('scroll')">
+          <div class="tc-icon">📰</div>
+          <div class="tc-name" data-i18n="type_scroll_name">スクロール</div>
+          <div class="tc-desc" data-i18n="type_scroll_desc">横スクロールテキスト</div>
+        </div>
+        <div class="type-card" data-type="break" onclick="selectType('break')">
+          <div class="tc-icon">ℹ️</div>
+          <div class="tc-name" data-i18n="type_break_name">お知らせ</div>
+          <div class="tc-desc" data-i18n="type_break_desc">中央大型お知らせテロップ</div>
+        </div>
+        <div class="type-card" data-type="media" onclick="selectType('media')">
+          <div class="tc-icon">🎞️</div>
+          <div class="tc-name" data-i18n="type_media_name">メディア</div>
+          <div class="tc-desc" data-i18n="type_media_desc">画像・動画ポン出し</div>
+        </div>
+        <div class="type-card" data-type="slide" onclick="selectType('slide')">
+          <div class="tc-icon">🖼️</div>
+          <div class="tc-name" data-i18n="type_slide_name">スライド</div>
+          <div class="tc-desc" data-i18n="type_slide_desc">複数メディアを順再生</div>
+        </div>
+        <div class="type-card" data-type="comp" onclick="selectType('comp')">
+          <div class="tc-icon">🧩</div>
+          <div class="tc-name" data-i18n="type_comp_name">複合シーン</div>
+          <div class="tc-desc" data-i18n="type_comp_desc">複数要素を同時表示</div>
+        </div>
+      </div>
+      <div class="modal-btns">
+        <button class="m-btn m-btn-cancel" data-i18n="btn_cancel" onclick="closeModal('new-modal')">キャンセル</button>
+        <button class="m-btn" data-i18n="btn_create" style="background:var(--acc);color:#000"
+          onclick="createNewContent()">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 削除確認モーダル ===== -->
+  <div class="modal-overlay" id="del-modal">
+    <div class="modal">
+      <h3 id="del-modal-title" data-i18n="modal_del_title">コンテンツを削除しますか?</h3>
+      <p id="del-modal-msg" style="font-size:13px;color:var(--txt2)" data-i18n="modal_del_msg">この操作は元に戻せません。</p>
+      <div class="modal-btns">
+        <button class="m-btn m-btn-cancel" data-i18n="btn_cancel" onclick="closeModal('del-modal')">キャンセル</button>
+        <button class="m-btn" data-i18n="btn_delete" style="background:var(--red);color:#fff"
+          onclick="confirmDelete()">削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 全画面プレーヤー ===== -->
+  <div class="fs-overlay" id="fs-overlay" tabindex="-1" onclick="closeFullscreen()" style="outline:none">
+    <button class="fs-close" onclick="closeFullscreen()" title="閉じる (Esc)">✕</button>
+    <div class="fs-area">
+      <img id="fs-img" src="" alt="" style="display:none">
+      <video id="fs-vid" muted loop tabindex="-1" style="display:none;outline:none"></video>
+      <div id="fs-placeholder" class="fs-placeholder" style="display:none"></div>
+    </div>
+    <div class="fs-clock" id="fs-clock">00:00:00</div>
+  </div>
+
+  <!-- notify -->
+  <div class="notify" id="notify"></div>
+
+  <!-- ファイルインプット -->
+  <input type="file" id="json-file-input" accept=".json" style="display:none" onchange="loadJSONFile(this)">
+  <input type="file" id="media-file-input" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.avi" multiple
+    style="display:none" onchange="onMediaFile(this)">
+  <input type="file" id="slide-file-input" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.avi" multiple
+    style="display:none" onchange="onSlideFile(this)">
+
+  <script src="js/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>OBS Display Layer</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+  background: transparent !important;
+  overflow: hidden;
+  width: 100%; height: 100%;
+  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+}
+
+/* ===== メディアポン出しレイヤー ===== */
+#media-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#media-wrap {
+  position: absolute;
+  opacity: 0;
+  /* transition は JS で完全制御 */
+  transform-origin: center center;
+}
+#media-wrap.visible { opacity: 1; }
+
+#media-img {
+  display: none;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+#media-vid {
+  display: none;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* フルスクリーンモード */
+#media-wrap.fullscreen {
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+}
+#media-wrap.fullscreen #media-img,
+#media-wrap.fullscreen #media-vid {
+  width: 100vw; height: 100vh;
+  object-fit: cover;
+}
+
+/* ===== テロップ共通 ===== */
+.telop-container {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ① ロウワーサード */
+#lower-third {
+  bottom: 80px; left: 0; right: 0;
+  padding: 0;
+  opacity: 0; transform: translateY(30px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+#lower-third.visible { opacity: 1; transform: translateY(0); }
+.lt-name {
+  background: rgba(10,10,20,0.88);
+  color: #fff;
+  font-size: 36px; font-weight: 700;
+  padding: 14px 28px 10px 22px;
+  letter-spacing: 0.05em;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 100%, 0 100%);
+  border-left: 6px solid #00d4ff;
+  display: inline-block;
+}
+.lt-title {
+  background: rgba(0,212,255,0.92);
+  color: #000;
+  font-size: 22px; font-weight: 600;
+  padding: 6px 24px 8px 22px;
+  letter-spacing: 0.08em;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+  display: inline-block;
+}
+
+/* ② スクロールテロップ */
+#scroll-telop {
+  bottom: 0; left: 0; right: 0; height: 54px;
+  display: flex; align-items: center; overflow: hidden;
+  opacity: 0; transition: opacity 0.4s;
+}
+#scroll-telop.visible { opacity: 1; }
+.scroll-bg { position:absolute; inset:0; background:rgba(0,0,0,0.82); border-top:3px solid #00d4ff; }
+.scroll-label {
+  position:relative; background:#00d4ff; color:#000;
+  font-size:20px; font-weight:800; padding:0 20px;
+  height:100%; display:flex; align-items:center;
+  white-space:nowrap; flex-shrink:0; letter-spacing:0.1em; z-index:1;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 100%, 0 100%);
+}
+.scroll-track { position:relative; flex:1; overflow:hidden; height:100%; z-index:1; }
+.scroll-text {
+  position:absolute; top:50%; transform:translateY(-50%);
+  white-space:nowrap; color:#fff;
+  font-size:24px; font-weight:500; letter-spacing:0.04em;
+}
+
+/* ③ 速報 */
+#breaking {
+  top:50%; left:50%;
+  transform: translate(-50%,-50%) scale(0.85);
+  width: min(1400px, 90vw); text-align:center;
+  opacity:0; transition: opacity 0.35s, transform 0.35s;
+}
+#breaking.visible { opacity:1; transform: translate(-50%,-50%) scale(1); }
+.breaking-label {
+  display:inline-block; background:#ff2233; color:#fff;
+  font-size:28px; font-weight:900; padding:6px 36px;
+  letter-spacing:0.3em; margin-bottom:8px;
+}
+.blink {
+  animation: blinkAnim 0.8s step-end infinite;
+}
+@keyframes blinkAnim { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes flashRed { 0%,100%{background:#ff2233} 50%{background:#cc0011} }
+.breaking-text {
+  display:block; background:rgba(0,0,0,0.92); color:#fff;
+  font-size:56px; font-weight:900;
+  padding:20px 40px;
+  border-top:5px solid #ff2233; border-bottom:5px solid #ff2233;
+  letter-spacing:0.05em; line-height:1.3;
+}
+
+/* ④ ウォーターマーク */
+#watermark {
+  top:30px; right:40px;
+  opacity:0; transition:opacity 0.5s; text-align:right;
+}
+#watermark.visible { opacity:1; }
+.wm-main { color:rgba(255,255,255,0.95); font-size:28px; font-weight:700; letter-spacing:0.08em; text-shadow:1px 1px 6px rgba(0,0,0,0.8); }
+.wm-sub  { color:rgba(0,212,255,0.9);   font-size:16px; font-weight:500; letter-spacing:0.15em; text-shadow:1px 1px 4px rgba(0,0,0,0.9); }
+
+/* ⑤ タイムコード */
+#timecode { top:30px; left:40px; opacity:0; transition:opacity 0.5s; }
+#timecode.visible { opacity:1; }
+.tc-wrap { background:rgba(0,0,0,0.7); border:1px solid rgba(0,212,255,0.5); border-radius:4px; padding:6px 14px; }
+.tc-text { color:#00d4ff; font-size:22px; font-weight:700; letter-spacing:0.12em; font-family:'Courier New',monospace; }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- メディアレイヤー -->
+<div id="media-layer">
+  <div id="media-wrap">
+    <img id="media-img" src="" alt="">
+    <video id="media-vid" src="" playsinline></video>
+  </div>
+</div>
+
+<!-- テロップ -->
+<div class="telop-container" id="lower-third">
+  <div id="lt-name-wrap"><div class="lt-name" id="lt-name-text">山田 太郎</div></div>
+  <div id="lt-title-wrap"><div class="lt-title" id="lt-title-text">株式会社サンプル　代表取締役社長</div></div>
+</div>
+
+<div class="telop-container" id="scroll-telop">
+  <div class="scroll-bg"></div>
+  <div class="scroll-label" id="scroll-label-text">ニュース</div>
+  <div class="scroll-track"><div class="scroll-text" id="scroll-text-el">テキストがここに流れます</div></div>
+</div>
+
+<div class="telop-container" id="breaking">
+  <div class="breaking-label" id="breaking-label-text">お知らせ</div>
+  <div class="breaking-text" id="breaking-body-text">お知らせテキスト</div>
+</div>
+
+<div class="telop-container" id="watermark">
+  <div class="wm-main" id="wm-main-text">CHANNEL NAME</div>
+  <div class="wm-sub" id="wm-sub-text">LIVE　HD</div>
+</div>
+
+<div class="telop-container" id="timecode">
+  <div class="tc-wrap"><div class="tc-text" id="tc-display">00:00:00</div></div>
+</div>
+
+<script>
+// ===== WebSocket 受信 =====
+let ws, _wsReconnectTimer = null;
+function connectWS() {
+  ws = new WebSocket(`ws://${location.hostname}:5501`);
+
+  ws.onmessage = (event) => {
+    const {type, payload} = JSON.parse(event.data);
+    switch(type) {
+      // --- 接続確認 ---
+      case 'PING':         ws.send(JSON.stringify({type:'PONG', payload:{}})); break;
+      // --- メディア ---
+      case 'MEDIA_SHOW':   showMedia(payload); break;
+      case 'MEDIA_HIDE':   hideMedia(payload); break;
+      case 'MEDIA_STOP':   stopMedia(); break;
+      case 'MEDIA_SEEK':   seekMedia(payload); break;
+      // --- テロップ ---
+      case 'LT_SHOW':      showLT(payload); break;
+      case 'LT_HIDE':      hideLT(payload); break;
+      case 'SCROLL_SHOW':  showScroll(payload); break;
+      case 'SCROLL_HIDE':  hideScroll(payload); break;
+      case 'BREAKING_SHOW':showBreaking(payload); break;
+      case 'BREAKING_HIDE':hideBreaking(payload); break;
+      case 'WM_SHOW':      showWM(payload); break;
+      case 'WM_HIDE':      hideWM(); break;
+      case 'TC_START':     startTC(); break;
+      case 'TC_STOP':      stopTC(); break;
+      case 'TC_RESET':     resetTC(); break;
+      case 'ALL_OFF':      allOff(); break;
+    }
+  };
+
+  ws.onclose = () => { clearTimeout(_wsReconnectTimer); _wsReconnectTimer = setTimeout(connectWS, 2000); };
+  ws.onerror = () => ws.close();
+}
+connectWS();
+
+// ===== メディア表示 =====
+const wrap = document.getElementById('media-wrap');
+const img  = document.getElementById('media-img');
+const vid  = document.getElementById('media-vid');
+
+// 基準解像度（1280×720）からのスケールでメディア座標を変換
+let _lastMediaParams = null;
+let _mediaHideTimer  = null; // hideMedia の遅延クリーンアップタイマー
+let _mediaPlayDurationTimer = null;
+function applyMediaPos(p) {
+  if (!p || p.fullscreen) return;
+  const scaleX = window.innerWidth  / LT_BASE_W;
+  const scaleY = window.innerHeight / (LT_BASE_W * 9 / 16);
+  wrap.style.left   = ((p.x ?? 0) * scaleX) + 'px';
+  wrap.style.top    = ((p.y ?? 0) * scaleY) + 'px';
+  wrap.style.width  = p.w ? (p.w * scaleX) + 'px' : 'auto';
+  wrap.style.height = p.h ? (p.h * scaleY) + 'px' : 'auto';
+}
+
+function showMedia(params) {
+  const {src, kind, fullscreen, loop, mute, x, y, w, h, enterMode, enterDuration, startTime, playDuration} = params;
+  _lastMediaParams = params;
+
+  // 進行中のフェードアウトを即座にキャンセル
+  if (_mediaHideTimer) { clearTimeout(_mediaHideTimer); _mediaHideTimer = null; }
+  if (_mediaPlayDurationTimer) { clearTimeout(_mediaPlayDurationTimer); _mediaPlayDurationTimer = null; }
+  wrap.style.transition = 'none';
+  wrap.style.opacity    = '';          // inline opacity をクリア
+  void wrap.offsetWidth;               // 強制リフロー
+
+  img.style.display = 'none';
+  vid.style.display = 'none';
+  vid.pause();
+
+  // 位置・サイズ
+  if (fullscreen) {
+    wrap.className = 'fullscreen';
+    wrap.style.cssText = '';
+  } else {
+    wrap.className = '';
+    applyMediaPos(params);
+  }
+
+  if (kind === 'video') {
+    vid.loop  = !!loop;
+    vid.muted = !!mute;
+    vid.style.display = 'block';
+    // 動画終了時にエディターへ通知
+    vid.onended = () => {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'VIDEO_ENDED', payload:{}}));
+    };
+    const doPlay = () => {
+      if (startTime) {
+        vid.currentTime = startTime;
+      }
+      vid.play().catch(()=>{});
+      if (playDuration > 0) {
+        _mediaPlayDurationTimer = setTimeout(() => {
+           vid.pause();
+           if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'VIDEO_ENDED', payload:{}}));
+        }, playDuration * 1000);
+      }
+    };
+    vid.src = src;
+    // readyState >= 1 ならメタデータ取得済み（キャッシュ済みなど）
+    if (vid.readyState >= 1) {
+      doPlay();
+    } else {
+      vid.onloadedmetadata = () => { vid.onloadedmetadata = null; doPlay(); };
+    };
+  } else {
+    img.src = src;
+    img.style.display = 'block';
+  }
+  const edur = enterDuration !== undefined ? enterDuration : (enterMode === 'cut' ? 0 : 0.3);
+  showEl(wrap, edur);
+}
+
+function cutOut(el) {
+  el.style.transition = 'none';
+  el.style.transitionDuration = '';
+  void el.offsetWidth;
+  el.style.opacity = '0';              // CSS クラスに依存せず inline で確定
+  el.classList.remove('visible');
+  requestAnimationFrame(() => { el.style.transition = ''; el.style.opacity = ''; });
+}
+function cutIn(el) {
+  el.style.transition = 'none';
+  el.style.transitionDuration = '';
+  void el.offsetWidth;
+  el.style.opacity = '1';              // inline で即座に 1 へ
+  el.classList.add('visible');
+  requestAnimationFrame(() => { el.style.transition = ''; el.style.opacity = ''; });
+}
+function getEnterDur(p) { if(p&&p.enterDuration!==undefined)return p.enterDuration; return (p&&p.enterMode==='cut')?0:0.3; }
+function getExitDur(p)  { if(p&&p.exitDuration!==undefined)return p.exitDuration;  return (p&&p.exitMode==='cut')?0:0.5; }
+function showEl(el, enterDuration) {
+  if (!enterDuration) { cutIn(el); return; }
+  // shorthand で統一（transitionDuration 単独指定を避ける）
+  el.style.transition = `opacity ${enterDuration}s ease`;
+  void el.offsetWidth;
+  el.classList.add('visible');
+  setTimeout(() => { el.style.transition = ''; }, enterDuration * 1000 + 100);
+}
+function hideEl(el, exitDuration) {
+  if (!exitDuration) { cutOut(el); return; }
+  el.style.transition = `opacity ${exitDuration}s ease`;
+  void el.offsetWidth;
+  el.classList.remove('visible');
+  setTimeout(() => { el.style.transition = ''; }, exitDuration * 1000 + 100);
+}
+
+function hideMedia(p={}) {
+  _lastMediaParams = null;
+  if (_mediaHideTimer) { clearTimeout(_mediaHideTimer); _mediaHideTimer = null; }
+  if (_mediaPlayDurationTimer) { clearTimeout(_mediaPlayDurationTimer); _mediaPlayDurationTimer = null; }
+  const dur = getExitDur(p);
+  if (!dur) {
+    cutOut(wrap);
+    requestAnimationFrame(() => { vid.pause(); vid.src = ''; img.src = ''; });
+  } else {
+    wrap.style.transition = `opacity ${dur}s ease`;
+    void wrap.offsetWidth;
+    wrap.classList.remove('visible');
+    _mediaHideTimer = setTimeout(() => {
+      _mediaHideTimer = null;
+      vid.pause(); vid.src = ''; img.src = ''; wrap.style.transition = '';
+    }, dur * 1000 + 100);
+  }
+}
+function stopMedia() { _lastMediaParams = null; vid.pause(); vid.currentTime=0; hideMedia(); }
+function seekMedia({delta}) {
+  try {
+    const maxTime = isFinite(vid.duration) ? vid.duration : 999999;
+    vid.currentTime = Math.max(0, Math.min(maxTime, (vid.currentTime || 0) + (delta || 0)));
+  } catch(e) {}
+}
+
+// ===== テロップ =====
+const LT_BASE_W = 1280; // フォントサイズ・位置の基準解像度幅
+let _lastLTParams = null;
+
+function getLTScale() {
+  return window.innerWidth / LT_BASE_W;
+}
+
+function applyLTStyles(p) {
+  const scale    = getLTScale();
+  const nameEl   = document.getElementById('lt-name-text');
+  const titleEl  = document.getElementById('lt-title-text');
+  const nameWrap = document.getElementById('lt-name-wrap');
+  const titleWrap= document.getElementById('lt-title-wrap');
+  const container= document.getElementById('lower-third');
+
+  if (p.nameColor) nameEl.style.color      = p.nameColor;
+  if (p.nameFont)  nameEl.style.fontFamily = p.nameFont + ', sans-serif';
+  nameEl.style.fontSize = ((p.nameSize || 36) * scale) + 'px';
+  if (p.accent)    nameEl.style.borderLeftColor = p.accent;
+
+  if (p.title && p.title.trim()) {
+    titleEl.textContent     = p.title;
+    titleWrap.style.display = '';
+    nameEl.style.borderBottom = '';
+    if (p.titleColor) titleEl.style.color      = p.titleColor;
+    if (p.titleFont)  titleEl.style.fontFamily = p.titleFont + ', sans-serif';
+    titleEl.style.fontSize = ((p.titleSize || 22) * scale) + 'px';
+    titleEl.style.background = p.titleBg || p.accent || '#00d4ff';
+  } else {
+    titleWrap.style.display   = 'none';
+    nameEl.style.borderBottom = `${4 * scale}px solid ${p.accent || '#00d4ff'}`;
+  }
+
+  // 横位置
+  const posNum  = typeof p.position === 'number' ? p.position
+    : {left:0, center:10, right:20}[p.position] ?? 0;
+  const leftPct = (posNum / 20 * 80).toFixed(1) + '%';
+  [nameWrap, titleWrap].forEach(el => { if (el) el.style.paddingLeft = leftPct; });
+
+  // 縦位置（基準解像度からスケール）
+  container.style.bottom = ((p.bottomPx ?? 80) * scale) + 'px';
+}
+
+function showLT(params) {
+  _lastLTParams = params;
+  const nameEl = document.getElementById('lt-name-text');
+  nameEl.textContent = params.name;
+  applyLTStyles(params);
+  const dur = params.enterDuration !== undefined ? params.enterDuration : (params.enterMode === 'cut' ? 0 : 0.3);
+  showEl(document.getElementById('lower-third'), dur);
+}
+function hideLT(p={}) {
+  _lastLTParams = null;
+  hideEl(document.getElementById('lower-third'), getExitDur(p));
+}
+
+// ウィンドウリサイズ時に再スケール
+window.addEventListener('resize', () => {
+  if (_lastLTParams)       applyLTStyles(_lastLTParams);
+  if (_lastScrollParams)   applyScrollStyles(_lastScrollParams);
+  if (_lastBreakingParams) applyBreakingStyles(_lastBreakingParams);
+  // メディア: position指定ありの場合は座標を再計算
+  if (_lastMediaParams)    applyMediaPos(_lastMediaParams);
+});
+
+let _scrollRaf = null;
+let _lastScrollParams  = null;
+let _lastBreakingParams = null;
+
+function applyScrollStyles(p) {
+  const scale   = window.innerWidth / LT_BASE_W;
+  const fs      = Math.max(16, Math.min(72, p.fontSize || 24)) * scale;
+  const labelEl = document.querySelector('.scroll-label');
+  const bgEl    = document.querySelector('.scroll-bg');
+  const el      = document.getElementById('scroll-text-el');
+  const container = document.getElementById('scroll-telop');
+
+  document.getElementById('scroll-label-text').textContent = p.label;
+  if (labelEl) {
+    if (p.labelBg)    labelEl.style.background  = p.labelBg;
+    if (p.labelColor) labelEl.style.color       = p.labelColor;
+    labelEl.style.fontFamily = p.labelFont || 'Hiragino Sans, sans-serif';
+    labelEl.style.fontSize   = Math.round(fs * 0.8) + 'px';
+  }
+  if (bgEl) bgEl.style.borderTop = `${Math.round(3 * scale)}px solid ${p.labelColor || '#00d4ff'}`;
+
+  el.style.fontSize   = fs + 'px';
+  el.style.color      = p.textColor  || '#ffffff';
+  el.style.fontFamily = p.scrollFont || 'Hiragino Sans, sans-serif';
+  el.textContent      = p.text;
+  el.style.left       = '';
+  container.style.height = Math.round(fs * 2.2) + 'px';
+
+  // RAFスクロール再起動
+  if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
+  const pct      = p.speedPct !== undefined ? p.speedPct : 100;
+  const pxPerSec = fs * (pct / 100) * 2.0;
+
+  requestAnimationFrame(() => {
+    const track  = document.querySelector('.scroll-track');
+    const trackW = track ? track.offsetWidth : 1920;
+    const textW  = el.scrollWidth;
+    let pos = trackW;
+    let lastTime = null;
+    function tick(now) {
+      if (lastTime === null) lastTime = now;
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      pos -= pxPerSec * dt;
+      if (pos < -textW) pos = trackW;
+      el.style.left = pos + 'px';
+      _scrollRaf = requestAnimationFrame(tick);
+    }
+    _scrollRaf = requestAnimationFrame(tick);
+  });
+}
+
+function showScroll(params) {
+  _lastScrollParams = params;
+  applyScrollStyles(params);
+  const dur = params.enterDuration !== undefined ? params.enterDuration : (params.enterMode === 'cut' ? 0 : 0.3);
+  showEl(document.getElementById('scroll-telop'), dur);
+}
+function hideScroll(p={}) {
+  _lastScrollParams = null;
+  if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
+  hideEl(document.getElementById('scroll-telop'), getExitDur(p));
+}
+
+// 速報ベースサイズ（1280x720基準）
+const BREAKING_LABEL_BASE = 28;
+const BREAKING_BODY_BASE  = 56;
+
+function applyBreakingStyles(p) {
+  const scale = window.innerWidth / LT_BASE_W;
+  const labelEl = document.getElementById('breaking-label-text');
+  const bodyEl  = document.getElementById('breaking-body-text');
+  const container = document.getElementById('breaking');
+  
+  labelEl.textContent = p.label;
+  bodyEl.textContent  = p.body;
+  document.querySelector('.breaking-label').style.fontSize = Math.round(BREAKING_LABEL_BASE * scale) + 'px';
+  document.querySelector('.breaking-text').style.fontSize  = Math.round(BREAKING_BODY_BASE  * scale) + 'px';
+
+  if (p.blink) {
+    container.classList.add('blink');
+  } else {
+    container.classList.remove('blink');
+  }
+}
+
+function showBreaking(params) {
+  _lastBreakingParams = params;
+  applyBreakingStyles(params);
+  const dur = params.enterDuration !== undefined ? params.enterDuration : (params.enterMode === 'cut' ? 0 : 0.3);
+  showEl(document.getElementById('breaking'), dur);
+}
+function hideBreaking(p={}) {
+  _lastBreakingParams = null;
+  hideEl(document.getElementById('breaking'), getExitDur(p));
+}
+
+function showWM({main,sub}) {
+  document.getElementById('wm-main-text').textContent = main;
+  document.getElementById('wm-sub-text').textContent  = sub;
+  document.getElementById('watermark').classList.add('visible');
+  document.getElementById('timecode').classList.add('visible');
+}
+function hideWM() {
+  document.getElementById('watermark').classList.remove('visible');
+  document.getElementById('timecode').classList.remove('visible');
+}
+
+let tcInt=null, tcSec=0;
+function startTC() {
+  if(tcInt) return;
+  document.getElementById('timecode').classList.add('visible');
+  tcInt = setInterval(()=>{
+    tcSec++;
+    const h=String(Math.floor(tcSec/3600)).padStart(2,'0');
+    const m=String(Math.floor((tcSec%3600)/60)).padStart(2,'0');
+    const s=String(tcSec%60).padStart(2,'0');
+    document.getElementById('tc-display').textContent=h+':'+m+':'+s;
+  },1000);
+}
+function stopTC()  { clearInterval(tcInt); tcInt=null; }
+function resetTC() { stopTC(); tcSec=0; document.getElementById('tc-display').textContent='00:00:00'; }
+
+function allOff() { hideMedia({exitDuration:0}); hideLT({exitDuration:0}); hideScroll({exitDuration:0}); hideBreaking({exitDuration:0}); hideWM(); resetTC(); }
+</script>
+</body>
+</html>
